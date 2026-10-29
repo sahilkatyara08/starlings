@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>starlings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@500;700&display=swap" />
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
+  body{
+    background-color:#FAFAF8;
+    background-image:linear-gradient(rgba(0,0,0,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.03) 1px,transparent 1px);
+    background-size:10px 10px;
+    font-family:Inter,system-ui,-apple-system,sans-serif;color:#1a1a1a;
+    -webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;
+  }
+  canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block;touch-action:none;cursor:crosshair;z-index:0}
+  .mark{position:fixed;top:20px;left:24px;font:500 13px/1 Inter,sans-serif;color:#1a1a1a;letter-spacing:-.01em;pointer-events:none;z-index:2}
+  .count{position:fixed;top:20px;right:24px;font:500 12px/1 "JetBrains Mono",ui-monospace,monospace;color:#6b6b67;pointer-events:none;z-index:2}
+  .dock{
+    position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);
+    width:620px;max-width:94vw;padding:10px;z-index:10;
+    display:flex;flex-direction:column;gap:8px;
+  }
+  /* frosted glass layer, squircle-clipped via --sq (border-radius fallback) */
+  .x-glass{position:absolute;inset:0;z-index:0;border-radius:24px;pointer-events:none;
+    background:rgba(255,255,255,.35);
+    -webkit-backdrop-filter:blur(28px) saturate(180%);backdrop-filter:blur(28px) saturate(180%);
+    clip-path:var(--sq,none);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.6),0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.05),0 8px 24px -6px rgba(0,0,0,.12),0 24px 60px -12px rgba(0,0,0,.16)}
+  .sq .x-glass{box-shadow:none}
+  .x-shade,.x-edge{position:absolute;pointer-events:none;overflow:visible;display:none}
+  .sq .x-shade,.sq .x-edge{display:block}
+  .x-shade{z-index:-1}
+  .x-edge{z-index:1}
+  .seg,.chips{position:relative;z-index:2}
+  .seg{display:grid;grid-template-columns:repeat(4,1fr);padding:3px;border-radius:14px}
+  .seg::before{content:"";position:absolute;inset:0;border-radius:14px;background:rgba(0,0,0,.045);pointer-events:none;clip-path:var(--sq,none)}
+  .tap{animation:tap .32s cubic-bezier(.3,.8,.2,1)}
+  @keyframes tap{40%{transform:scale(.95)}}
+  .seg .pill{position:absolute;top:3px;bottom:3px;left:3px;width:calc((100% - 6px)/4);
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.07)) drop-shadow(0 2px 5px rgba(0,0,0,.06));transition:transform .42s cubic-bezier(.3,.8,.2,1)}
+  .seg .pill i{position:absolute;inset:0;border-radius:11px;background:#fff;clip-path:var(--sq,none)}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  button:focus-visible{outline:2px solid rgba(0,0,0,.35);outline-offset:1px}
+  .seg button{position:relative;z-index:1;min-height:44px;font:500 13px/1 Inter,sans-serif;color:#6a6a66;border-radius:11px;transition:color .25s}
+  .seg button:hover{color:#2a2a28}
+  .seg button[aria-pressed="true"]{color:#1a1a1a}
+  .chips{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
+  .chips button{position:relative;min-height:52px;padding:8px 2px 7px;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+  .chips button::before{content:"";position:absolute;inset:0;border-radius:14px;background:rgba(255,255,255,0);clip-path:var(--sq,none);transition:background-color .25s;pointer-events:none}
+  .chips button:hover::before{background:rgba(255,255,255,.4)}
+  .chips button[aria-pressed="true"]{filter:drop-shadow(0 1px 1px rgba(0,0,0,.06)) drop-shadow(0 2px 5px rgba(0,0,0,.05))}
+  .chips button[aria-pressed="true"]::before{background:rgba(255,255,255,.85)}
+  .dots,.chips span{position:relative}
+  .dots{display:flex}
+  .dots i{width:10px;height:10px;border-radius:50%;margin:0 -1px;box-shadow:0 0 0 1.5px rgba(255,255,255,.9)}
+  .chips span{font:400 12px/1 Inter,sans-serif;color:#555;white-space:nowrap}
+  @media (max-width:480px){.dock{padding:8px;gap:6px}.chips span{font-size:12px;letter-spacing:-.02em}.chips{gap:2px}}
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A murmuration of starlings drawn in ASCII. Move to chase them, tap to startle."></canvas>
+<div class="mark">starlings</div>
+<div class="count" id="count">1,800 birds</div>
+<div class="dock" id="dock" role="toolbar" aria-label="Flock controls">
+  <svg class="x-shade" id="shade" aria-hidden="true"></svg>
+  <div class="x-glass" id="glass"></div>
+  <svg class="x-edge" id="edge" aria-hidden="true"></svg>
+  <div class="seg" id="seg" role="group" aria-label="Behaviour">
+    <div class="pill" id="pill"><i></i></div>
+    <button data-m="0" aria-pressed="true">Murmur</button>
+    <button data-m="1" aria-pressed="false">Stream</button>
+    <button data-m="2" aria-pressed="false">Gather</button>
+    <button data-m="3" aria-pressed="false">Roost</button>
+  </div>
+  <div class="chips" id="chips" role="group" aria-label="Palette"></div>
+</div>
+<script>
+(() => {
+  const PAL = [
+    ["Slate", "#d9d9d6", "#6b6b6b", "#141414"],
+    ["Sundown", "#f2c1a8", "#b77fa8", "#3b3566"],
+    ["Embers", "#f6c27a", "#e0653a", "#5a1e14"],
+    ["Fern", "#cfd8c0", "#7d9168", "#2f3b25"],
+    ["Frost", "#d6e8f0", "#7fb0c8", "#21445a"],
+    ["Pebble", "#e3e1dc", "#9a958c", "#3a3833"],
+  ];
+  //            sep  ali  coh  att  spd  flow swirl roost
+  const MODES = [
+    [1.6, 1.0, 0.9, 0.6, 2.6, 0, 0, 0],   // murmur
+    [1.3, 2.6, 0.12, 0, 3.1, 1, 0, 0],    // stream
+    [1.1, 0.8, 1.6, 2.2, 2.4, 0, 1, 0],   // gather
+    [1.0, 0.3, 0, 0, 1.1, 0, 0, 1],       // roost
+  ];
+  const GLYPHS = " •+*ovw%8@";
+  const CS = 10;
+  let HS = 36, NR = 34, SR = 18, ATT_R = 240;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const mobile = innerWidth < 700 || matchMedia("(pointer: coarse)").matches;
+  const N = mobile ? 900 : 1800;
+  document.getElementById("count").textContent = N.toLocaleString("en-US") + " birds";
+
+  const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+  let W, H, dpr, cols, rows, counts, gcols, grows, head;
+  const x = new Float32Array(N), y = new Float32Array(N), vx = new Float32Array(N), vy = new Float32Array(N);
+  const hx = new Float32Array(N), hy = new Float32Array(N), next = new Int32Array(N), occ = new Int32Array(N);
+  const levels = Array.from({ length: 10 }, () => []);
+
+  function resize() {
+    dpr = Math.min(2, devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    cols = Math.ceil(W / CS); rows = Math.ceil(H / CS);
+    counts = new Uint16Array(cols * rows);
+    // spacing sized so the flock covers ~55% of the viewport
+    const s = Math.sqrt(W * H * 0.55 / N);
+    SR = s * 0.9; NR = s * 1.8; HS = Math.ceil(NR); ATT_R = Math.min(W, H) * 0.32;
+    gcols = Math.ceil(W / HS) + 1; grows = Math.ceil(H / HS) + 1;
+    head = new Int32Array(gcols * grows);
+    if (mode === 3) setHomes();
+  }
+
+  let mode = 0;
+  const p = MODES[0].slice();
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * 6.283, r = Math.sqrt(Math.random()) * Math.min(innerWidth, innerHeight) * 0.4;
+    x[i] = innerWidth / 2 + Math.cos(a) * r * 1.4; y[i] = innerHeight * 0.42 + Math.sin(a) * r;
+    vx[i] = Math.cos(a + 1.6) * 2; vy[i] = Math.sin(a + 1.6) * 2;
+  }
+  resize();
+
+  function setHomes() {
+    const wire = H * 0.67;
+    for (let i = 0; i < N; i++) {
+      // clustered along the wire, a few rows thick
+      const c = Math.floor(Math.random() * 7), cx = 0.12 + c * 0.127;
+      hx[i] = W * Math.min(0.92, Math.max(0.08, cx + (Math.random() - 0.5) * 0.14 + (Math.random() - 0.5) * 0.05));
+      const j = Math.random(); hy[i] = wire - j * j * 12 + (Math.random() - 0.5) * 3;
+    }
+  }
+
+  // palette crossfade
+  const hex = (h) => [1, 3, 5].map((k) => parseInt(h.slice(k, k + 2), 16));
+  let palIdx = 0, palFrom = PAL[0].slice(1).map(hex), palTo = palFrom, palT0 = 0;
+  const cur = palFrom.map((c) => c.slice());
+  const fill = new Array(10), sq = new Array(10);
+
+  function updatePalette(now) {
+    let k = Math.min(1, (now - palT0) / 600); k = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    for (let c = 0; c < 3; c++) for (let j = 0; j < 3; j++) cur[c][j] = palFrom[c][j] + (palTo[c][j] - palFrom[c][j]) * k;
+    for (let lv = 1; lv < 10; lv++) {
+      // light only at the faintest edge; mid and dark carry the flock
+      const d = 0.38 + 0.62 * Math.min(1, (lv - 1) / 6);
+      const a = d < 0.5 ? cur[0] : cur[1], b = d < 0.5 ? cur[1] : cur[2], t = d < 0.5 ? d * 2 : (d - 0.5) * 2;
+      const r = Math.round(a[0] + (b[0] - a[0]) * t), g = Math.round(a[1] + (b[1] - a[1]) * t), bl = Math.round(a[2] + (b[2] - a[2]) * t);
+      fill[lv] = `rgba(${r},${g},${bl},${Math.min(1, 0.45 + 0.55 * (lv - 1) / 4).toFixed(3)})`;
+      sq[lv] = `rgba(${r},${g},${bl},${(0.08 + 0.22 * (lv - 1) / 8).toFixed(3)})`;
+    }
+  }
+
+  // input: falcon + startle
+  let fx = -1e4, fy = -1e4, falcon = false, panic = 0;
+  cv.addEventListener("pointermove", (e) => { fx = e.clientX; fy = e.clientY; falcon = true; });
+  cv.addEventListener("pointerleave", () => { falcon = false; });
+  cv.addEventListener("pointerup", (e) => { if (e.pointerType !== "mouse") falcon = false; });
+  cv.addEventListener("pointerdown", (e) => {
+    fx = e.clientX; fy = e.clientY; falcon = true;
+    if (reduce) return;
+    panic = 1;
+    for (let i = 0; i < N; i++) {
+      const dx = x[i] - fx, dy = y[i] - fy, d = Math.hypot(dx, dy) + 0.01;
+      if (d < 340) { const k = (1 - d / 340) * 7; vx[i] += dx / d * k; vy[i] += dy / d * k; }
+    }
+  });
+
+  function step(dt, t) {
+    const sep = p[0], ali = p[1], coh = p[2] * (1 - panic * 0.9) * (0.75 + 0.35 * Math.sin(t * 0.41));
+    const att = p[3] * (0.7 + 0.5 * Math.sin(t * 0.47)), spd = p[4], flow = p[5], swirl = p[6], roost = p[7];
+    const g = Math.min(1, swirl);
+    const amp = 1 - g * 0.85;
+    const Ax = W / 2 + (Math.sin(t * 0.13) * 0.3 + Math.sin(t * 0.29 + 1) * 0.12) * W * amp;
+    const Ay = H * 0.42 + (Math.sin(t * 0.17 + 2) * 0.2 + Math.cos(t * 0.37) * 0.08) * H * amp;
+    const bottom = H - (mobile ? 60 : 50), m = Math.min(W, H) * 0.08;
+
+    head.fill(-1);
+    for (let i = 0; i < N; i++) {
+      const gx = Math.min(gcols - 1, Math.max(0, (x[i] / HS) | 0)), gy = Math.min(grows - 1, Math.max(0, (y[i] / HS) | 0));
+      const c = gy * gcols + gx; next[i] = head[c]; head[c] = i;
+    }
+
+    for (let i = 0; i < N; i++) {
+      const xi = x[i], yi = y[i];
+      const gx = Math.min(gcols - 1, Math.max(0, (xi / HS) | 0)), gy = Math.min(grows - 1, Math.max(0, (yi / HS) | 0));
+      let n = 0, ax = 0, ay = 0, cx = 0, cy = 0, sx = 0, sy = 0;
+      outer: for (let oy = -1; oy <= 1; oy++) {
+        const ry = gy + oy; if (ry < 0 || ry >= grows) continue;
+        for (let ox = -1; ox <= 1; ox++) {
+          const rx = gx + ox; if (rx < 0 || rx >= gcols) continue;
+          for (let j = head[ry * gcols + rx]; j !== -1; j = next[j]) {
+            if (j === i) continue;
+            const dx = xi - x[j], dy = yi - y[j], d2 = dx * dx + dy * dy;
+            if (d2 > NR * NR) continue;
+            n++; ax += vx[j]; ay += vy[j]; cx += x[j]; cy += y[j];
+            if (d2 < SR * SR) { const d = Math.sqrt(d2) + 0.01, k = 1 - d / SR; sx += dx / d * k; sy += dy / d * k; }
+            if (n >= 28) break outer;
+          }
+        }
+      }
+      let fxi = 0, fyi = 0;
+      if (n) {
+        fxi += (ax / n - vx[i]) * ali * 0.05 + (cx / n - xi) * coh * 0.0016 + sx * sep * 0.14;
+        fyi += (ay / n - vy[i]) * ali * 0.05 + (cy / n - yi) * coh * 0.0016 + sy * sep * 0.14;
+      }
+      if (att > 0.001 || swirl > 0.001) {
+        const dx = Ax - xi, dy = Ay - yi, d = Math.hypot(dx, dy) + 0.01, k = Math.min(1, d / ATT_R);
+        fxi += dx / d * att * 0.035 * k - dy / d * swirl * 0.05;
+        fyi += dy / d * att * 0.035 * k + dx / d * swirl * 0.05;
+      }
+      if (flow > 0.001) {
+        const b = i % 3, ty = H * 0.42 + (b - 1) * H * 0.16 + Math.sin(xi * 0.006 + t * 0.5 + b * 2.1) * H * 0.1;
+        fxi += flow * 0.05; fyi += (ty - yi) * 0.0009 * flow;
+      }
+      if (roost > 0.001) {
+        fxi += (hx[i] - xi) * 0.0025 * roost; fyi += (hy[i] - yi) * 0.0025 * roost;
+        const damp = 1 - 0.07 * roost * dt; vx[i] *= damp; vy[i] *= damp;
+        if (roost > 0.9 && Math.abs(hx[i] - xi) + Math.abs(hy[i] - yi) < 5) { vx[i] *= 0.75; vy[i] *= 0.75; }
+      }
+      let fleeing = false;
+      if (falcon) {
+        const dx = xi - fx, dy = yi - fy, d2 = dx * dx + dy * dy;
+        if (d2 < 14400) { const d = Math.sqrt(d2) + 0.01, k = 1 - d / 120; fxi += dx / d * k * 1.3; fyi += dy / d * k * 1.3; fleeing = true; }
+      }
+      // soft bounds
+      if (flow < 0.5) { if (xi < m) fxi += 0.06 * (1 - xi / m); else if (xi > W - m) fxi -= 0.06 * (1 - (W - xi) / m); }
+      if (yi < m + 30) fyi += 0.06 * (1 - (yi - 30) / m); else if (yi > bottom && roost < 0.5) fyi -= 0.06 * Math.min(2, (yi - bottom) / m);
+
+      let nvx = vx[i] + fxi * dt, nvy = vy[i] + fyi * dt;
+      const s = Math.hypot(nvx, nvy) + 1e-4, max = spd * (fleeing ? 1.9 : 1) * (1 + panic * 0.8), min = spd * 0.5 * (1 - roost);
+      if (s > max) { nvx *= max / s; nvy *= max / s; } else if (s < min) { nvx *= min / s; nvy *= min / s; }
+      vx[i] = nvx; vy[i] = nvy;
+      x[i] += nvx * dt; y[i] += nvy * dt;
+      if (flow > 0.5) { if (x[i] > W + 12) x[i] = -12; else if (x[i] < -12) x[i] = W + 12; }
+    }
+    if (roost > 0.9 && Math.random() < 0.5 * dt) {
+      const i = (Math.random() * N) | 0;
+      vy[i] -= 1.6 + Math.random() * 1.2; vx[i] += (Math.random() - 0.5) * 2.4;
+      hx[i] = Math.min(W * 0.92, Math.max(W * 0.08, hx[i] + (Math.random() - 0.5) * 40));
+    }
+    panic = Math.max(0, panic - 0.006 * dt);
+  }
+
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    counts.fill(0);
+    let no = 0;
+    for (let i = 0; i < N; i++) {
+      const cx = (x[i] / CS) | 0, cy = (y[i] / CS) | 0;
+      if (cx < 0 || cy < 0 || cx >= cols || cy >= rows || x[i] < 0 || y[i] < 0) continue;
+      const c = cy * cols + cx;
+      if (counts[c]++ === 0) occ[no++] = c;
+    }
+    for (let lv = 1; lv < 10; lv++) levels[lv].length = 0;
+    for (let k = 0; k < no; k++) { const c = occ[k]; levels[Math.min(9, counts[c])].push(c); }
+    for (let lv = 1; lv < 10; lv++) {
+      const L = levels[lv]; if (!L.length) continue;
+      ctx.fillStyle = sq[lv];
+      for (let k = 0; k < L.length; k++) { const c = L[k]; ctx.fillRect((c % cols) * CS + 0.5, ((c / cols) | 0) * CS + 0.5, CS - 1, CS - 1); }
+    }
+    ctx.font = '700 12px "JetBrains Mono", ui-monospace, monospace';
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (let lv = 1; lv < 10; lv++) {
+      const L = levels[lv]; if (!L.length) continue;
+      ctx.fillStyle = fill[lv]; const ch = GLYPHS[lv];
+      for (let k = 0; k < L.length; k++) { const c = L[k]; ctx.fillText(ch, (c % cols) * CS + 5, ((c / cols) | 0) * CS + 5.5); }
+    }
+  }
+
+  let last = performance.now(), running = true, clock = 0;
+  function frame(now) {
+    if (!running) return;
+    let dt = Math.min(2.5, (now - last) / 16.667); last = now;
+    if (reduce) dt *= 0.3;
+    clock += dt / 60;
+    const target = MODES[mode], lk = 1 - Math.pow(0.975, dt / (reduce ? 0.3 : 1));
+    for (let k = 0; k < 8; k++) p[k] += (target[k] - p[k]) * lk;
+    step(dt, clock);
+    updatePalette(now);
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  document.addEventListener("visibilitychange", () => {
+    running = !document.hidden;
+    if (running) { last = performance.now(); requestAnimationFrame(frame); }
+  });
+  addEventListener("resize", resize);
+
+  // dock
+  const segBtns = [...document.querySelectorAll("#seg button")], pill = document.getElementById("pill");
+  function tap(b) { b.classList.remove("tap"); void b.offsetWidth; b.classList.add("tap"); b.dataset.taps = (+(b.dataset.taps || 0) + 1); }
+  function setMode(mi) {
+    tap(segBtns[mi]);
+    if (mi === mode) { // re-select: a gentle ripple through the flock
+      for (let i = 0; i < N; i++) { vx[i] += (Math.random() - 0.5) * 1.2; vy[i] += (Math.random() - 0.5) * 1.2; }
+      return;
+    }
+    if (mode === 3) for (let i = 0; i < N; i++) { vy[i] -= 1.2 + Math.random() * 2.2; vx[i] += (Math.random() - 0.5) * 2.4; }
+    if (mi === 3) setHomes();
+    mode = mi;
+    pill.style.transform = `translateX(${mi * 100}%)`;
+    segBtns.forEach((b, k) => b.setAttribute("aria-pressed", k === mi));
+  }
+  segBtns.forEach((b, k) => b.addEventListener("click", () => setMode(k)));
+
+  const chipsEl = document.getElementById("chips");
+  const chips = PAL.map((pl, k) => {
+    const b = document.createElement("button");
+    b.setAttribute("aria-pressed", k === 0);
+    b.setAttribute("aria-label", pl[0] + " palette");
+    b.innerHTML = `<div class="dots">${pl.slice(1).map((c) => `<i style="background:${c}"></i>`).join("")}</div><span>${pl[0]}</span>`;
+    b.addEventListener("click", () => setPal(k));
+    chipsEl.appendChild(b);
+    return b;
+  });
+  function setPal(k) {
+    k = (k + PAL.length) % PAL.length;
+    tap(chips[k]);
+    if (k === palIdx) return;
+    palIdx = k; palFrom = cur.map((c) => c.slice()); palTo = PAL[k].slice(1).map(hex); palT0 = performance.now();
+    chips.forEach((b, j) => b.setAttribute("aria-pressed", j === k));
+  }
+  // iOS-style squircle corners: superellipse path per element size, border-radius fallback
+  const SQ = window.CSS && CSS.supports && CSS.supports("clip-path", 'path("M0 0H1V1Z")');
+  if (SQ) {
+    document.documentElement.classList.add("sq");
+    const sqPath = (w, h, r, o = 0) => {
+      const R = Math.max(0, Math.min(r * 1.6, w / 2, h / 2)), e = 0.4, S = 14; // exponent n = 5
+      const C = [[w - R, R, -Math.PI / 2], [w - R, h - R, 0], [R, h - R, Math.PI / 2], [R, R, Math.PI]];
+      let d = "";
+      for (const [cx, cy, a0] of C) for (let k = 0; k <= S; k++) {
+        const a = a0 + (Math.PI / 2) * (k / S), c = Math.cos(a), s = Math.sin(a);
+        const px = cx + R * Math.sign(c) * Math.pow(Math.abs(c), e) + o, py = cy + R * Math.sign(s) * Math.pow(Math.abs(s), e) + o;
+        d += (d ? "L" : "M") + px.toFixed(2) + " " + py.toFixed(2);
+      }
+      return d + "Z";
+    };
+    const clip = (el, r) => { const w = el.offsetWidth, h = el.offsetHeight; if (w && h) el.style.setProperty("--sq", `path("${sqPath(w, h, r)}")`); };
+    const dockEl = document.getElementById("dock"), glass = document.getElementById("glass");
+    const shade = document.getElementById("shade"), edge = document.getElementById("edge");
+    const DR = 24, P = 70, E = 2;
+    function paintDock() {
+      const w = dockEl.offsetWidth, h = dockEl.offsetHeight; if (!w || !h) return;
+      clip(glass, DR);
+      Object.assign(shade.style, { left: -P + "px", top: -P + "px" });
+      shade.setAttribute("width", w + 2 * P); shade.setAttribute("height", h + 2 * P);
+      const sp = sqPath(w, h, DR, P);
+      shade.innerHTML = `<defs><filter id="xsf" x="-20%" y="-20%" width="140%" height="160%">
+        <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000" flood-opacity=".05"/>
+        <feDropShadow dx="0" dy="6" stdDeviation="9" flood-color="#000" flood-opacity=".08"/>
+        <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity=".12"/></filter>
+        <mask id="xsm" maskUnits="userSpaceOnUse" x="0" y="0" width="${w + 2 * P}" height="${h + 2 * P}">
+        <rect width="100%" height="100%" fill="#fff"/><path d="${sp}" fill="#000"/></mask></defs>
+        <g mask="url(#xsm)"><path d="${sp}" fill="#fff" filter="url(#xsf)"/></g>`;
+      Object.assign(edge.style, { left: -E + "px", top: -E + "px" });
+      edge.setAttribute("width", w + 2 * E); edge.setAttribute("height", h + 2 * E);
+      edge.innerHTML = `<path d="${sqPath(w + 1, h + 1, DR + 0.5, E - 0.5)}" fill="none" stroke="rgba(0,0,0,.06)" stroke-width="1"/>
+        <path d="${sqPath(w - 1, h - 1, DR - 0.5, E + 0.5)}" fill="none" stroke="rgba(255,255,255,.6)" stroke-width="1"/>`;
+    }
+    const segEl = document.getElementById("seg"), pillShape = pill.firstElementChild;
+    const jobs = new Map([[dockEl, paintDock], [segEl, () => clip(segEl, 14)], [pillShape, () => clip(pillShape, 11)]]);
+    chips.forEach((b) => jobs.set(b, () => clip(b, 14)));
+    jobs.forEach((fn) => fn());
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver((entries) => entries.forEach((en) => { const fn = jobs.get(en.target); if (fn) fn(); }));
+      jobs.forEach((_, el) => ro.observe(el));
+    } else addEventListener("resize", () => jobs.forEach((fn) => fn()));
+  }
+
+  addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key >= "1" && e.key <= "4") setMode(+e.key - 1);
+    else if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); setPal(palIdx + 1); }
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); setPal(palIdx - 1); }
+  });
+})();
+</script>
+</body>
+</html>
